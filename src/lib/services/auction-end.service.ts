@@ -104,3 +104,55 @@ export async function processEndedItems(): Promise<number> {
     return 0;
   }
 }
+
+/**
+ * Cascade-close: lots of an ended auction must end too.
+ * Sets endDate = auction endDate on items that are still open
+ * (no date, or a date beyond the auction end). This runs as a
+ * background task alongside processEndedItems (notification polling),
+ * so time-based auction ends propagate even without manual close.
+ */
+export async function closeItemsOfEndedAuctions(): Promise<number> {
+  try {
+    const now = new Date();
+    const endedAuctions = await prisma.auction.findMany({
+      where: {
+        endDate: { lt: now },
+        items: {
+          some: { OR: [{ endDate: null }, { endDate: { gt: now } }] },
+        },
+      },
+      select: { id: true, endDate: true },
+    });
+
+    if (endedAuctions.length === 0) {
+      return 0;
+    }
+
+    let closed = 0;
+    await Promise.all(
+      endedAuctions.map(async (a) => {
+        const r = await prisma.auctionItem.updateMany({
+          where: {
+            auctionId: a.id,
+            OR: [{ endDate: null }, { endDate: { gt: a.endDate! } }],
+          },
+          data: { endDate: a.endDate! },
+        });
+        closed += r.count;
+      }),
+    );
+
+    if (closed > 0) {
+      auctionEndLogger.info(
+        { closed, auctions: endedAuctions.length },
+        "Cascade-closed items of ended auctions",
+      );
+    }
+
+    return closed;
+  } catch (err) {
+    auctionEndLogger.error({ err }, "Failed to cascade-close items");
+    return 0;
+  }
+}

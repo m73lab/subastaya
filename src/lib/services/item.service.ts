@@ -289,8 +289,19 @@ export async function getItemDetailPageData(
     orderBy: { amount: "desc" },
   });
 
+  // Lots inherit the auction end: fetch it to block bids and surface
+  // the ended state even when the item itself has no (or a future) date
+  const auction = await prisma.auction.findUnique({
+    where: { id: auctionId },
+    select: { endDate: true },
+  });
+  const isAuctionEnded =
+    !!auction?.endDate && new Date(auction.endDate) < new Date();
+
   // Check if item has ended
-  const isItemEnded = item.endDate && new Date(item.endDate) < new Date();
+  const isItemEnded =
+    !!(item.endDate && new Date(item.endDate) < new Date()) ||
+    isAuctionEnded;
   const isItemOwner = item.creatorId === viewerId;
   const highestBid = bidsRaw[0] || null;
 
@@ -1379,6 +1390,7 @@ export async function getUserCreatedItems(userId: string) {
         select: {
           id: true,
           name: true,
+          endDate: true,
         },
       },
       currency: {
@@ -1410,12 +1422,13 @@ export async function getUserCreatedItems(userId: string) {
     orderBy: { createdAt: "desc" },
   });
 
-  return items.map((item) => ({
-    id: item.id,
-    name: item.name,
-    auctionId: item.auction.id,
-    auctionName: item.auction.name,
-    currencySymbol: item.currency.symbol,
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      auctionId: item.auction.id,
+      auctionName: item.auction.name,
+      auctionEndDate: item.auction.endDate?.toISOString() ?? null,
+      currencySymbol: item.currency.symbol,
     currencyCode: item.currency.code,
     startingBid: item.startingBid,
     currentBid: item.bids[0]?.amount ?? null,

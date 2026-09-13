@@ -72,7 +72,7 @@ export const placeBid: ApiHandler = async (req, res, ctx) => {
     where: { id: itemId },
     include: {
       currency: true,
-      auction: { select: { bidderVisibility: true } },
+      auction: { select: { bidderVisibility: true, endDate: true } },
     },
   });
 
@@ -90,10 +90,16 @@ export const placeBid: ApiHandler = async (req, res, ctx) => {
     throw new ForbiddenError("You cannot bid on your own item");
   }
 
-  // Check if bidding has ended
-  if (itemService.isItemEnded(item.endDate)) {
-    throw new BadRequestError("Bidding has ended for this item");
-  }
+    // Check if bidding has ended
+    if (itemService.isItemEnded(item.endDate)) {
+      throw new BadRequestError("Bidding has ended for this item");
+    }
+
+    // Lots inherit the auction end: no bids once the auction has ended,
+    // even if the item itself still shows a future date (or none)
+    if (item.auction.endDate && item.auction.endDate < new Date()) {
+      throw new BadRequestError("Bidding has ended for this auction");
+    }
 
   const currencyProfile =
     await auctionCurrencyService.resolveAuctionCurrencyForBid(

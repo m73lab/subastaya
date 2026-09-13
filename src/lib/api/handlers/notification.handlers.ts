@@ -23,6 +23,11 @@ export const listNotifications: ApiHandler = async (req, res, ctx) => {
     console.error("Background auction-end processing failed:", err);
   });
 
+  // Cascade-close lots of ended auctions in background (fire-and-forget)
+  auctionEndService.closeItemsOfEndedAuctions().catch((err) => {
+    console.error("Background cascade-close failed:", err);
+  });
+
   const notifications = await notificationService.getUserNotifications(
     ctx.session!.user.id,
     { unreadOnly, limit },

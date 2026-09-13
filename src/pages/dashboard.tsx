@@ -73,6 +73,7 @@ interface UserItem {
   name: string;
   auctionId: string;
   auctionName: string;
+  auctionEndDate: string | null;
   currencySymbol: string;
   currencyCode: string;
   startingBid: number;
@@ -176,7 +177,8 @@ function BidItemCard({ item, userId }: { item: BidItem; userId: string }) {
 function UserItemCard({ item }: { item: UserItem }) {
   const t = useTranslations("dashboard");
   const tItem = useTranslations("item.edit");
-  const ended = isItemEnded(item.endDate);
+  const ended =
+    isItemEnded(item.endDate) || isAuctionEnded(item.auctionEndDate);
   const isDraft = !item.isPublished;
 
   return (

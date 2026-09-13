@@ -78,6 +78,7 @@ interface ItemDetailProps {
     id: string;
     name: string;
     bidderVisibility: string;
+    endDate: string | null;
   };
   auctionItems: SidebarItem[];
   itemSidebarCollapsed: boolean;
@@ -193,11 +194,13 @@ export default function ItemDetailPage({
   // Check if item has ended (use initialItem for initial polling config)
   const initialIsEnded =
     initialItem.endDate && new Date(initialItem.endDate) < new Date();
+  const initialAuctionEnded =
+    auction.endDate && new Date(auction.endDate) < new Date();
 
   // Use critical priority for active bidding, pauses when tab hidden
   const baseRefreshInterval = usePollingInterval({
     priority: "critical",
-    disabled: !!initialIsEnded,
+    disabled: !!(initialIsEnded || initialAuctionEnded),
   });
 
   // Get SWR config based on realtime connection status
@@ -332,8 +335,13 @@ export default function ItemDetailPage({
 
   const isHighestBidder = item.highestBidderId === user.id;
 
-  // Use item from SWR data so it updates after ending
-  const isEnded = item.endDate && new Date(item.endDate) < new Date();
+  // Use item from SWR data so it updates after ending.
+  // Lots inherit the auction end: the item counts as ended when its
+  // auction has ended, even if the item itself has no (or a future) date.
+  const isItemEnded = item.endDate && new Date(item.endDate) < new Date();
+  const isAuctionEnded =
+    auction.endDate && new Date(auction.endDate) < new Date();
+  const isEnded = isItemEnded || isAuctionEnded;
 
   const minBid = item.currentBid
     ? item.currentBid + item.minBidIncrement
@@ -1069,7 +1077,9 @@ export default function ItemDetailPage({
                           <div className="text-center py-6 bg-base-200/30 rounded-xl border border-base-content/5">
                             <span className="icon-[tabler--hammer-off] size-8 text-base-content/20 mb-2"></span>
                             <div className="text-base-content/60 font-medium">
-                              {t("bid.biddingEnded")}
+                              {isAuctionEnded && !isItemEnded
+                                ? tAuction("settings.endedMessage")
+                                : t("bid.biddingEnded")}
                             </div>
                           </div>
                           {winnerEmail && (
@@ -1298,6 +1308,9 @@ export const getServerSideProps = withAuth(async (context) => {
         id: membership.auction.id,
         name: membership.auction.name,
         bidderVisibility: membership.auction.bidderVisibility,
+        endDate: membership.auction.endDate
+          ? membership.auction.endDate.toISOString()
+          : null,
       },
       auctionItems,
       itemSidebarCollapsed: userSettings?.itemSidebarCollapsed ?? false,
