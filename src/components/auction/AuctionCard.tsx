@@ -17,11 +17,13 @@ interface AuctionCardProps {
       members: number;
     };
   };
+  onDelete?: (auction: { id: string; name: string }) => void;
 }
 
-export function AuctionCard({ auction }: AuctionCardProps) {
+export function AuctionCard({ auction, onDelete }: AuctionCardProps) {
   const t = useTranslations("auction.card");
   const tRoles = useTranslations("auction.roles");
+  const tSettings = useTranslations("auction.settings");
   const { formatShortDate } = useFormatters();
   const ended = isAuctionEnded(auction.endDate);
   const href = ended
@@ -80,12 +82,29 @@ export function AuctionCard({ auction }: AuctionCardProps) {
             {roleLabel}
           </div>
         </div>
-        {ended && (
-          <div className="absolute top-3 right-3">
-            <div className="badge badge-error gap-1 shadow-sm font-medium">
-              <span className="icon-[tabler--flag-filled] size-3"></span>
-              {t("ended")}
-            </div>
+        {(onDelete || ended) && (
+          <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
+            {onDelete && (
+              <button
+                type="button"
+                title={tSettings("delete")}
+                aria-label={tSettings("delete")}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete({ id: auction.id, name: auction.name });
+                }}
+                className="btn btn-circle btn-xs bg-base-100/90 border-none shadow-md text-error hover:bg-error hover:text-error-content"
+              >
+                <span className="icon-[tabler--trash] size-3.5"></span>
+              </button>
+            )}
+            {ended && (
+              <div className="badge badge-error gap-1 shadow-sm font-medium">
+                <span className="icon-[tabler--flag-filled] size-3"></span>
+                {t("ended")}
+              </div>
+            )}
           </div>
         )}
       </figure>

@@ -3,8 +3,9 @@ import Link from "next/link";
 import useSWR from "swr";
 import { getMessages, Locale } from "@/i18n";
 import { fetcher } from "@/lib/fetcher";
-import { PageLayout, EmptyState, SEO } from "@/components/common";
+import { PageLayout, EmptyState, SEO, ConfirmModal } from "@/components/common";
 import { AuctionCard } from "@/components/auction";
+import { useToast } from "@/components/ui/toast";
 import { StatsCard, CurrencyStatsCard } from "@/components/ui/stats-card";
 import { SkeletonDashboard } from "@/components/ui/skeleton";
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/sort-dropdown";
 import { useSortFilter, usePollingInterval } from "@/hooks/ui";
 import { withAuth } from "@/lib/auth/withAuth";
-import { isItemEnded, getBidStatus } from "@/utils/auction-helpers";
+import { isItemEnded, isAuctionEnded, getBidStatus } from "@/utils/auction-helpers";
 import { useTranslations } from "next-intl";
 import {
   formatCurrency,
@@ -250,6 +251,7 @@ function UserItemCard({ item }: { item: UserItem }) {
 
 function QuotaPanel({ auctions }: { auctions: any[] }) {
   const t = useTranslations("dashboard.slots");
+  const tCard = useTranslations("auction.card");
   const { data: slots } = useSWR<SlotBalance>("/api/user/slots", fetcher);
   const perAuctionExtras = slots?.perAuctionExtras || {};
   const owned = auctions.filter((a: any) => a.role === "OWNER");
@@ -296,9 +298,18 @@ function QuotaPanel({ auctions }: { auctions: any[] }) {
               photos: a.imageCount || 0,
             };
             const photoCapacity = used.items * limits.images;
+            const ended = isAuctionEnded(a.endDate);
             return (
               <div key={a.id} className="rounded-xl bg-base-200/50 p-4">
-                <div className="font-semibold truncate">{a.name}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-semibold truncate">{a.name}</div>
+                  {ended && (
+                    <span className="badge badge-error badge-xs gap-1 shrink-0">
+                      <span className="icon-[tabler--flag-filled] size-2.5"></span>
+                      {tCard("ended")}
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-4 mt-3 text-sm">
                   <div>
                     <div className="text-base-content/60 text-xs">Lotes</div>
@@ -349,6 +360,9 @@ export default function DashboardPage({ user }: DashboardProps) {
   const t = useTranslations("dashboard");
   const tStats = useTranslations("dashboard.stats");
   const tEmpty = useTranslations("dashboard.empty");
+  const tAuctionSettings = useTranslations("auction.settings");
+  const tErrors = useTranslations("errors");
+  const { showToast } = useToast();
   const { currentSort: auctionSort } = useSortFilter(
     "auctionSort",
     "date-desc",
@@ -359,7 +373,7 @@ export default function DashboardPage({ user }: DashboardProps) {
   const refreshInterval = usePollingInterval({ priority: "medium" });
 
   // Client-side data fetching with polling for bid status updates
-  const { data, isLoading } = useSWR<DashboardData>(
+  const { data, isLoading, mutate } = useSWR<DashboardData>(
     "/api/user/dashboard",
     fetcher,
     {
@@ -377,6 +391,33 @@ export default function DashboardPage({ user }: DashboardProps) {
     currentlyWinning: 0,
   };
   const userItems = data?.userItems ?? [];
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAuction = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/auctions/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        showToast(result.message || tErrors("auction.updateFailed"), "error");
+        return;
+      }
+      showToast(tAuctionSettings("deleteSuccess"), "success");
+      setDeleteTarget(null);
+      mutate();
+    } catch {
+      showToast(tErrors("generic"), "error");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const sortedAuctions = useMemo(
     () => sortAuctions(auctions, auctionSort),
@@ -588,11 +629,30 @@ export default function DashboardPage({ user }: DashboardProps) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {myAuctions.map((auction) => (
-                <AuctionCard key={auction.id} auction={auction} />
+                <AuctionCard
+                  key={auction.id}
+                  auction={auction}
+                  onDelete={(a) => setDeleteTarget(a)}
+                />
               ))}
             </div>
           </div>
         )}
+
+        <ConfirmModal
+          isOpen={!!deleteTarget}
+          title={tAuctionSettings("delete")}
+          message={
+            deleteTarget
+              ? tAuctionSettings("confirmDelete", { name: deleteTarget.name })
+              : ""
+          }
+          confirmLabel={tAuctionSettings("delete")}
+          variant="error"
+          isLoading={isDeleting}
+          onConfirm={handleDeleteAuction}
+          onClose={() => !isDeleting && setDeleteTarget(null)}
+        />
 
         {/* Auctions Section */}
         {auctions.length === 0 ? (
